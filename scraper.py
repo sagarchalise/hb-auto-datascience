@@ -1,10 +1,11 @@
 import os
-from itertools import repeat
-import re
 import csv
 import time
-import requests
+import difflib
+import itertools
 from concurrent.futures import ThreadPoolExecutor
+
+import requests
 from bs4 import BeautifulSoup, NavigableString
 
 hamrobazaar = "http://hamrobazaar.com/m/search.php"
@@ -14,7 +15,28 @@ mobile_category = 31
 base_url = "{}?do_search=Search&catid_search={}&e_2=2&&order=siteid&way=0&do_search=Search".format(
     hamrobazaar, auto_catgory
 )
-offset_compile = re.compile(r"&offset=(\d+)")
+
+AUTO_MAPS = {
+    "bike": {
+        "honda": [],
+        "hero": [],
+        "yamaha": [],
+        "ktm": [],
+        "benelli": [],
+        "royal enfield": [],
+        "electric": [],
+        "suzuki": [],
+    },
+    "scooter": {
+        "hero": [],
+        "yamaha": [],
+        "suzuki": [],
+        "bently": [],
+        "honda": [],
+        "electric": [],
+        "aprilla": [],
+    },
+}
 
 
 def write_to_csv(data):
@@ -25,12 +47,70 @@ def write_to_csv(data):
     with open("hbcsv.csv", "a", newline="") as f:
         writer = csv.DictWriter(
             f,
-            fieldnames=["Cost", "Condition", "Anchal", "Lot No", "Make Year", "Kilometers"],
+            fieldnames=[
+                "Brand",
+                "Name",
+                "Cost",
+                "Type",
+                "Condition",
+                "Anchal",
+                "Lot No",
+                "Make Year",
+                "Kilometers",
+            ],
             extrasaction="ignore",
         )
         if write_header:
             writer.writeheader()
         writer.writerows(data)
+
+
+def get_required_info(concerned_td):
+    data = {}
+
+    def get_anchal(t):
+        k = {}
+        if t.startswith("Anchal"):
+            val = t.split("|")
+            for v in val:
+                d = v.split(":")
+                if len(d) == 2:
+                    k[d[0].strip()] = d[1].strip()
+        return k
+
+    def get_condition_and_cost(t):
+        k = {}
+        if t.startswith("(") and t.endswith(")"):
+            k["Condition"] = t.replace("(", "").replace(")", "").strip()
+            if t.startswith("Rs."):
+                try:
+                    k["Cost"] = int(t[4:].replace(",", "").strip())
+                except:
+                    k["Cost"] = -1
+        return k
+
+    def get_name_and_type(t):
+        k = {"Name": "UnKnown", "Type": "UnKnown", "Brand": "UnKnown"}
+        tokens = t.split()
+        for bt, opts in AUTO_MAPS.items():
+            for brand, options in opts.items():
+                for opt in options:
+                    matcher = difflib.get_close_matches(opt, tokens)
+                    if matcher:
+                        k["Name"] = opt
+                        k["Brand"] = brand
+                        k["Type"] = bt
+                        break
+        return k
+
+    concerned_td = concerned_td or []
+    for td in concerned_td:
+        for val in td.descendants:
+            if isinstance(val, NavigableString):
+                data.update(get_anchal(val))
+                data.update(get_cost_and_condition(val))
+                data.update(get_name_and_type(val))
+    return data
 
 
 def scrape_from_hb(url=None, offset_start=None, stopper=0):
@@ -63,7 +143,7 @@ def scrape_from_hb(url=None, offset_start=None, stopper=0):
 
     all_tags = soup.find_all(concerned_tag)
     next_url = None
-    data = []
+    datas = []
     for tag in all_tags:
         if tag.string == "Next":
             next_url = tag.find_parent("a").get("href")
@@ -72,36 +152,22 @@ def scrape_from_hb(url=None, offset_start=None, stopper=0):
             all_tds = parent_tr.find_all("td")
             if not all_tds:
                 continue
-            k = {}
-            for td in (all_tds[2], all_tds[-2]):
-                for t in td.descendants:
-                    if isinstance(t, NavigableString):
-                        if t.startswith("Anchal"):
-                            val = t.split("|")
-                            for v in val:
-                                d = v.split(":")
-                                if len(d) == 2:
-                                    k[d[0].strip()] = d[1].strip()
-                        if t.startswith("(") and t.endswith(")"):
-                            k["Condition"] = t.replace("(", "").replace(")", "").strip()
-                        if t.startswith("Rs."):
-                            try:
-                                k["Cost"] = int(t[4:].replace(",", "").strip())
-                            except:
-                                k["Cost"] = -1
-            if k:
-                data.append(k)
+            data = get_required_info((all_tds[1], all_tds[2], all_tds[-2]))
+            if data:
+                datas.append(k)
     stopper = stopper + 1
     if next_url:
         time.sleep(0.5)
         d = scrape_from_hb(url=next_url, stopper=stopper)
         if d:
-            data.extend(d)
+            datas.extend(d)
     return data
 
 
 if __name__ == "__main__":
     with ThreadPoolExecutor(max_workers=5) as executor:
-        mapped = executor.map(scrape_from_hb, repeat(base_url), range(0, 4000, 500), repeat(0))
+        mapped = executor.map(
+            scrape_from_hb, itertools.repeat(base_url), range(0, 4000, 500), itertools.repeat(0)
+        )
     for m in mapped:
         write_to_csv(m)
