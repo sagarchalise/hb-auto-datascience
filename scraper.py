@@ -33,15 +33,26 @@ HB_FIELDS = [
 ]
 
 AUTO_MAPS = {
-    "hero": ["splendor", "xtreme", "cbz", "karizma", "glamour", "dio"],
-    "honda": ["hornet", "unicorn", "shine", "dio"],
-    "bajaj": ["pulsar", "discover"],
+    "hero": ["splendor", "xtreme", "cbz", "karizma", "glamour", "pleasure"],
+    "honda": [
+        "hornet",
+        "unicorn",
+        "shine",
+        "dio",
+        "cbr",
+        "crf",
+        "aviator",
+        "activa",
+        "stunner",
+        "xr",
+    ],
+    "bajaj": ["pulsar", "discover", "ns", "avenger"],
     "yamaha": ["fz", "r15", "ray", "fascino"],
     "tvs": ["apache"],
-    "royal enfield": ["classic"],
+    "enfield": ["classic"],
     "hartford": ["vr"],
     "ktm": ["duke"],
-    "suzuki": ["gixxer"],
+    "suzuki": ["gixxer", "gn"],
     "um": ["renegade"],
     "mahindra": ["centuro", "rodeo", "duro", "gusto", "flyte"],
     "crossfire": [],
@@ -73,28 +84,41 @@ def convert_to_int(val):
         if val.startswith("Rs."):
             return convert_to_int(val[4:].replace(",", "").strip())
         return val
+    except TypeError:
+        return val
+
+
+def get_fuzzy_score(vals, checks, cutoff=0.8):
+    for v in vals:
+        matcher = difflib.get_close_matches(v, checks, cutoff=cutoff)
+        if matcher:
+            return v
 
 
 def get_name_and_brand(t):
     k = {"Name": "UnKnown", "Brand": "UnKnown"}
-    tokens = t.strip().split()
+    t = t.strip().lower()
+    tokens = t.split()
     for brand, options in AUTO_MAPS.items():
-        matcher = difflib.get_close_matches(brand, tokens, cutoff=0.8)
+        if brand in t:
+            k["Brand"] = brand
+            name = get_fuzzy_score(options, tokens)
+            if name:
+                k["Name"] = name
+            break
+        matcher = get_fuzzy_score([brand], tokens)
         if matcher:
             k["Brand"] = brand
-            for opt in options:
-                matcher = difflib.get_close_matches(opt, tokens, cutoff=0.8)
-                if matcher:
-                    k["Name"] = opt
-                    break
+            name = get_fuzzy_score(options, tokens)
+            if name:
+                k["Name"] = name
             break
         else:
-            for opt in options:
-                matcher = difflib.get_close_matches(opt, tokens, cutoff=0.8)
-                if matcher:
-                    k["Brand"] = brand
-                    k["Name"] = opt
-                    break
+            name = get_fuzzy_score(options, tokens)
+            if matcher:
+                k["Brand"] = brand
+                k["Name"] = name
+                break
     return k
 
 
@@ -168,7 +192,8 @@ def get_per_bike_urls_list(url=None, offset_start=None, stopper=0):
             if not all_tds:
                 continue
             bike_page = all_tds[2].find("a")
-            page_urls.append(bike_page.get("href"))
+            if bike_page:
+                page_urls.append(bike_page.get("href"))
     stopper = stopper + 1
     if next_url:
         time.sleep(0.5)
@@ -190,5 +215,4 @@ if __name__ == "__main__":
     for urls in mapped_urls:
         with ThreadPoolExecutor(max_workers=7) as executor:
             mapped.append(executor.map(scrape_from_page, urls))
-    for m in mapped:
-        write_to_csv(m)
+    write_to_csv(itertools.chain.from_iterable(mapped))
