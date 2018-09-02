@@ -23,11 +23,11 @@ HB_FIELDS = [
     "Anchal",
     "Type",
     "Condition",
-    "Used For (year or month)",
+    "Used For",
     "Lot No",
     "Price",
-    "Mileage  (km / l)",
-    "Engine (CC)",
+    "Mileage",
+    "Engine",
     "Make Year",
     "Kilometers",
 ]
@@ -46,13 +46,13 @@ AUTO_MAPS = {
         "stunner",
         "xr",
     ],
-    "bajaj": ["pulsar", "discover", "ns", "avenger"],
+    "bajaj": ["pulsar", "discover", "ns", "avenger", "platina"],
     "yamaha": ["fz", "r15", "ray", "fascino"],
-    "tvs": ["apache"],
+    "tvs": ["apache", "pep", "jupiter"],
     "enfield": ["classic"],
     "hartford": ["vr"],
     "ktm": ["duke"],
-    "suzuki": ["gixxer", "gn"],
+    "suzuki": ["gixxer", "gn", "access"],
     "um": ["renegade"],
     "mahindra": ["centuro", "rodeo", "duro", "gusto", "flyte"],
     "crossfire": [],
@@ -113,12 +113,13 @@ def get_name_and_brand(t):
             if name:
                 k["Name"] = name
             break
-        else:
-            name = get_fuzzy_score(options, tokens)
-            if matcher:
-                k["Brand"] = brand
-                k["Name"] = name
-                break
+        matcher = get_fuzzy_score(options, tokens)
+        if matcher:
+            k["Brand"] = brand
+            k["Name"] = matcher
+            break
+    else:  # nobreak
+        print("Couldnot determine name", t)
     return k
 
 
@@ -145,12 +146,19 @@ def scrape_from_page(url):
     for ind, td in enumerate(all_tds):
         if not td.string:
             continue
-        key = td.string.strip().replace(":", "")
-        if key in concerned:
-            val = all_tds[ind + 1].string
-            if key in INT_FIELDS:
-                val = convert_to_int(val)
-            data[key] = val
+        key = td.string.strip().lower()
+        if key == "price negotiable:":
+            continue
+        for check in concerned:
+            if key.startswith(check.lower()) and key.endswith(":"):
+                key = check
+                break
+        else:
+            continue
+        val = all_tds[ind + 1].string
+        if key in INT_FIELDS:
+            val = convert_to_int(val)
+        data[key] = val
     return data
 
 
@@ -204,15 +212,16 @@ def get_per_bike_urls_list(url=None, offset_start=None, stopper=0):
 
 
 if __name__ == "__main__":
-    with ThreadPoolExecutor(max_workers=7) as executor:
-        mapped_urls = executor.map(
-            get_per_bike_urls_list,
-            itertools.repeat(search_url),
-            range(0, 4000, 500),
-            itertools.repeat(0),
-        )
-    mapped = []
-    for urls in mapped_urls:
-        with ThreadPoolExecutor(max_workers=7) as executor:
-            mapped.append(executor.map(scrape_from_page, urls))
-    write_to_csv(itertools.chain.from_iterable(mapped))
+    # with ThreadPoolExecutor(max_workers=7) as executor:
+    # mapped_urls = executor.map(
+    # get_per_bike_urls_list,
+    # itertools.repeat(search_url),
+    # range(0, 4000, 500),
+    # itertools.repeat(0),
+    # )
+    # mapped = []
+    # for urls in mapped_urls:
+    # with ThreadPoolExecutor(max_workers=7) as executor:
+    # mapped.append(executor.map(scrape_from_page, urls))
+    # write_to_csv(itertools.chain.from_iterable(mapped))
+    print(scrape_from_page("http://hamrobazaar.com/i876953-rodeo-on-sale.html"))
