@@ -23,11 +23,11 @@ HB_FIELDS = [
     "Anchal",
     "Type",
     "Condition",
-    "Used For (year or month)",
+    "Used For",
     "Lot No",
     "Price",
-    "Mileage  (km / l)",
-    "Engine (CC)",
+    "Mileage",
+    "Engine",
     "Make Year",
     "Kilometers",
 ]
@@ -46,13 +46,13 @@ AUTO_MAPS = {
         "stunner",
         "xr",
     ],
-    "bajaj": ["pulsar", "discover", "ns", "avenger"],
+    "bajaj": ["pulsar", "discover", "ns", "avenger", "platina"],
     "yamaha": ["fz", "r15", "ray", "fascino"],
-    "tvs": ["apache"],
+    "tvs": ["apache", "pep", "jupiter"],
     "enfield": ["classic"],
     "hartford": ["vr"],
     "ktm": ["duke"],
-    "suzuki": ["gixxer", "gn"],
+    "suzuki": ["gixxer", "gn", "access"],
     "um": ["renegade"],
     "mahindra": ["centuro", "rodeo", "duro", "gusto", "flyte"],
     "crossfire": [],
@@ -62,6 +62,7 @@ AUTO_MAPS = {
     "reiju": [],
     "vespa": [],
     "aprilla": [],
+    "ducati": [],
 }
 
 
@@ -113,12 +114,13 @@ def get_name_and_brand(t):
             if name:
                 k["Name"] = name
             break
-        else:
-            name = get_fuzzy_score(options, tokens)
-            if matcher:
-                k["Brand"] = brand
-                k["Name"] = name
-                break
+        matcher = get_fuzzy_score(options, tokens)
+        if matcher:
+            k["Brand"] = brand
+            k["Name"] = matcher
+            break
+    else:  # nobreak
+        print("Couldnot determine name", t)
     return k
 
 
@@ -134,23 +136,32 @@ def scrape_from_page(url):
     if not url.startswith("http"):
         url = "{}{}".format(hamrobazaar, url)
     soup = request_and_get_soup(url)
+    if not soup:
+        return {}
     name = soup.find("span", {"class": "title"})
-    data = get_name_and_brand((name.string or "").strip())
+    data = get_name_and_brand((name and name.string or "").strip())
     parent_td = soup.find("td", {"valign": "top", "align": "left"})
     if not parent_td:
-        return
+        return data
     all_tds = parent_td.find_all("td", {"id": "white"})
     concerned = HB_FIELDS[2:]
     INT_FIELDS = HB_FIELDS[6:]
     for ind, td in enumerate(all_tds):
         if not td.string:
             continue
-        key = td.string.strip().replace(":", "")
-        if key in concerned:
-            val = all_tds[ind + 1].string
-            if key in INT_FIELDS:
-                val = convert_to_int(val)
-            data[key] = val
+        key = td.string.strip().lower()
+        if key == "price negotiable:":
+            continue
+        for check in concerned:
+            if key.startswith(check.lower()) and key.endswith(":"):
+                key = check
+                break
+        else:
+            continue
+        val = all_tds[ind + 1].string
+        if key in INT_FIELDS:
+            val = convert_to_int(val)
+        data[key] = val
     return data
 
 
