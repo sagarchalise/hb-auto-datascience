@@ -62,6 +62,7 @@ AUTO_MAPS = {
     "reiju": [],
     "vespa": [],
     "aprilla": [],
+    "ducati": [],
 }
 
 
@@ -135,11 +136,13 @@ def scrape_from_page(url):
     if not url.startswith("http"):
         url = "{}{}".format(hamrobazaar, url)
     soup = request_and_get_soup(url)
+    if not soup:
+        return {}
     name = soup.find("span", {"class": "title"})
-    data = get_name_and_brand((name.string or "").strip())
+    data = get_name_and_brand((name and name.string or "").strip())
     parent_td = soup.find("td", {"valign": "top", "align": "left"})
     if not parent_td:
-        return
+        return data
     all_tds = parent_td.find_all("td", {"id": "white"})
     concerned = HB_FIELDS[2:]
     INT_FIELDS = HB_FIELDS[6:]
@@ -212,16 +215,15 @@ def get_per_bike_urls_list(url=None, offset_start=None, stopper=0):
 
 
 if __name__ == "__main__":
-    # with ThreadPoolExecutor(max_workers=7) as executor:
-    # mapped_urls = executor.map(
-    # get_per_bike_urls_list,
-    # itertools.repeat(search_url),
-    # range(0, 4000, 500),
-    # itertools.repeat(0),
-    # )
-    # mapped = []
-    # for urls in mapped_urls:
-    # with ThreadPoolExecutor(max_workers=7) as executor:
-    # mapped.append(executor.map(scrape_from_page, urls))
-    # write_to_csv(itertools.chain.from_iterable(mapped))
-    print(scrape_from_page("http://hamrobazaar.com/i876953-rodeo-on-sale.html"))
+    with ThreadPoolExecutor(max_workers=7) as executor:
+        mapped_urls = executor.map(
+            get_per_bike_urls_list,
+            itertools.repeat(search_url),
+            range(0, 4000, 500),
+            itertools.repeat(0),
+        )
+    mapped = []
+    for urls in mapped_urls:
+        with ThreadPoolExecutor(max_workers=7) as executor:
+            mapped.append(executor.map(scrape_from_page, urls))
+    write_to_csv(itertools.chain.from_iterable(mapped))
