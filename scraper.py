@@ -83,7 +83,14 @@ def convert_to_int(val):
         return int(val)
     except ValueError:
         if val.startswith("Rs."):
-            return convert_to_int(val[4:].replace(",", "").strip())
+            val = val[3:].replace(",", "").strip()
+            if val:
+                new_val = convert_to_int(val)
+                if new_val == val:
+                    return val
+                if new_val//1000:
+                    return new_val
+                return new_val*1000
         return val
     except TypeError:
         return val
